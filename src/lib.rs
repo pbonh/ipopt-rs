@@ -406,8 +406,6 @@ impl<'a> Solution<'a> {
         num_primal_vars: usize,
         num_dual_vars: usize,
     ) -> Solution<'a> {
-        dbg!(num_dual_vars);
-        dbg!(data.mult_g);
         Solution {
             primal_variables: unsafe { slice::from_raw_parts(data.x, num_primal_vars) },
             lower_bound_multipliers: unsafe {
