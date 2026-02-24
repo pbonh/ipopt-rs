@@ -125,6 +125,10 @@ fn init_logger() {
 fn main() {
     init_logger();
 
+    if cfg!(target_os = "linux") {
+        ensure_gfortran_arg_mismatch_flag();
+    }
+
     let mut msg = String::from("\n\n");
 
     // Try to find Ipopt preinstalled.
@@ -184,6 +188,20 @@ fn main() {
     }
 
     panic!("{}", msg);
+}
+
+fn ensure_gfortran_arg_mismatch_flag() {
+    const FLAG: &str = "-fallow-argument-mismatch";
+    let current = env::var("ADD_FFLAGS").unwrap_or_default();
+    if current.split_whitespace().any(|tok| tok == FLAG) {
+        return;
+    }
+    let mut updated = current;
+    if !updated.is_empty() {
+        updated.push(' ');
+    }
+    updated.push_str(FLAG);
+    env::set_var("ADD_FFLAGS", updated);
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -513,6 +531,10 @@ fn link(cnlp_install_path: PathBuf, link_info: LinkInfo) -> Result<(), Error> {
         println!("cargo:rustc-link-lib=dylib=stdc++");
     }
 
+    if cfg!(target_os = "linux") {
+        println!("cargo:rustc-link-lib=dylib=gomp");
+    }
+
     // Generate raw bindings to CNLP interface
     let c_api_header = cnlp_install_path.join("include").join("c_api.h");
 
@@ -618,19 +640,6 @@ fn build_and_install_ipopt() -> Result<LinkInfo, Error> {
     // to debug the internals of ipopt more easily.
     let debug: bool = env::var("DEBUG").unwrap().parse().unwrap();
     debug!("debug build? {}", debug);
-
-    if cfg!(target_os = "linux") {
-        let mismatch_flag = "-fallow-argument-mismatch";
-        let mut fflags = env::var("FFLAGS").unwrap_or_default();
-        if !fflags.contains(mismatch_flag) {
-            if !fflags.is_empty() {
-                fflags.push(' ');
-            }
-            fflags.push_str(mismatch_flag);
-            env::set_var("FFLAGS", &fflags);
-            env::set_var("F77FLAGS", &fflags);
-        }
-    }
 
     let build_dir = unpacked_dir
         .join("build")
