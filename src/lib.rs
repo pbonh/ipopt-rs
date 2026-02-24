@@ -695,7 +695,7 @@ impl<P: BasicProblem> Ipopt<P> {
 
     /// Solve non-linear problem.
     /// Return the solve status and the final value of the objective function.
-    pub fn solve(&mut self) -> SolveResult<P> {
+    pub fn solve(&mut self) -> SolveResult<'_, P> {
         let res = {
             let udata_ptr = self as *mut Ipopt<P>;
             unsafe { ffi::cnlp_solve(self.nlp_internal, udata_ptr as ffi::CNLP_UserDataPtr) }
@@ -721,7 +721,7 @@ impl<P: BasicProblem> Ipopt<P> {
 
     /// Get data for inspection and updating.
     #[allow(non_snake_case)]
-    pub fn solver_data_mut(&mut self) -> SolverDataMut<P> {
+    pub fn solver_data_mut(&mut self) -> SolverDataMut<'_, P> {
         let Ipopt {
             nlp_interface: ref mut problem,
             nlp_internal,
@@ -740,7 +740,7 @@ impl<P: BasicProblem> Ipopt<P> {
 
     /// Get data for inspection from the internal solver.
     #[allow(non_snake_case)]
-    pub fn solver_data(&self) -> SolverData<P> {
+    pub fn solver_data(&self) -> SolverData<'_, P> {
         let Ipopt {
             nlp_interface: ref problem,
             nlp_internal,
