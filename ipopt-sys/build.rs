@@ -619,6 +619,19 @@ fn build_and_install_ipopt() -> Result<LinkInfo, Error> {
     let debug: bool = env::var("DEBUG").unwrap().parse().unwrap();
     debug!("debug build? {}", debug);
 
+    if cfg!(target_os = "linux") {
+        let mismatch_flag = "-fallow-argument-mismatch";
+        let mut fflags = env::var("FFLAGS").unwrap_or_default();
+        if !fflags.contains(mismatch_flag) {
+            if !fflags.is_empty() {
+                fflags.push(' ');
+            }
+            fflags.push_str(mismatch_flag);
+            env::set_var("FFLAGS", &fflags);
+            env::set_var("F77FLAGS", &fflags);
+        }
+    }
+
     let build_dir = unpacked_dir
         .join("build")
         .join(if debug { "debug" } else { "release" });
