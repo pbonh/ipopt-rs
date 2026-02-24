@@ -41,6 +41,8 @@ use std::process::Command;
 use std::{env, fs};
 use tar::Archive;
 
+mod build_support;
+
 const LIBRARY: &str = "ipopt";
 const SOURCE_URL: &str = "https://github.com/coin-or/Ipopt/archive/releases/";
 const VERSION: &str = "3.12.13";
@@ -99,6 +101,7 @@ mod platform {
 #[cfg(target_os = "windows")]
 mod family {}
 
+use crate::build_support::find_openmp_runtime;
 use crate::family::*;
 use crate::platform::*;
 
@@ -124,10 +127,6 @@ fn init_logger() {
 
 fn main() {
     init_logger();
-
-    if cfg!(target_os = "linux") {
-        ensure_gfortran_arg_mismatch_flag();
-    }
 
     let mut msg = String::from("\n\n");
 
@@ -188,20 +187,6 @@ fn main() {
     }
 
     panic!("{}", msg);
-}
-
-fn ensure_gfortran_arg_mismatch_flag() {
-    const FLAG: &str = "-fallow-argument-mismatch";
-    let current = env::var("ADD_FFLAGS").unwrap_or_default();
-    if current.split_whitespace().any(|tok| tok == FLAG) {
-        return;
-    }
-    let mut updated = current;
-    if !updated.is_empty() {
-        updated.push(' ');
-    }
-    updated.push_str(FLAG);
-    env::set_var("ADD_FFLAGS", updated);
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -297,6 +282,7 @@ fn try_pkg_config() -> Result<LinkInfo, Error> {
 fn system_install_paths() -> Vec<(PathBuf, PathBuf)> {
     vec![
         ("/usr/lib", "/usr/include"),
+        ("/usr/lib64", "/usr/include"),
         ("/usr/local/lib", "/usr/local/include"),
         ("/usr/lib/x86_64-linux-gnu", "/usr/include/x86_64-linux-gnu"),
     ]
@@ -504,6 +490,19 @@ fn build_cnlp(ipopt_include_paths: &[PathBuf]) -> PathBuf {
 /// Link ipopt-sys to our cnlp api. If ipopt is provided as a dynamic lib, we need to link it here.
 /// The `dynamic` flags specifies if ipopt is being linked dynamically.
 fn link(cnlp_install_path: PathBuf, link_info: LinkInfo) -> Result<(), Error> {
+    let search_paths = link_info.search_paths.clone();
+    let has_openmp_link = link_info
+        .libs
+        .iter()
+        .any(|(_, lib)| lib == "gomp" || lib == "omp");
+    let openmp_lib = if cfg!(target_os = "linux") && !has_openmp_link {
+        let mut probe_paths = search_paths.clone();
+        probe_paths.extend(system_install_paths().into_iter().map(|(lib, _)| lib));
+        find_openmp_runtime(&probe_paths)
+    } else {
+        None
+    };
+
     // Link to cnlp
     println!(
         "cargo:rustc-link-search=native={}",
@@ -524,15 +523,15 @@ fn link(cnlp_install_path: PathBuf, link_info: LinkInfo) -> Result<(), Error> {
         println!("cargo:rustc-link-lib={}={}", lib_type_str, lib);
     }
 
+    if let Some(lib) = openmp_lib {
+        println!("cargo:rustc-link-lib=dylib={}", lib);
+    }
+
     // Add the C++ standard lib for linking against CNLP.
     if cfg!(target_os = "macos") {
         println!("cargo:rustc-link-lib=dylib=c++");
     } else {
         println!("cargo:rustc-link-lib=dylib=stdc++");
-    }
-
-    if cfg!(target_os = "linux") {
-        println!("cargo:rustc-link-lib=dylib=gomp");
     }
 
     // Generate raw bindings to CNLP interface

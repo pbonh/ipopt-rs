@@ -460,3 +460,85 @@ mod tests {
         (inf_pr >= 1e-4) as CNLP_Bool
     }
 }
+
+#[cfg(test)]
+mod build_support_tests {
+    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/build_support.rs"));
+
+    use std::fs;
+    use std::fs::File;
+    use std::path::{Path, PathBuf};
+    use std::process;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn make_temp_dir(label: &str) -> PathBuf {
+        let mut path = std::env::temp_dir();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time should be after unix epoch")
+            .as_nanos();
+        path.push(format!(
+            "ipopt_sys_openmp_{}_{}_{}",
+            label,
+            process::id(),
+            now
+        ));
+        fs::create_dir_all(&path).expect("temp dir should be created");
+        path
+    }
+
+    fn touch(path: &Path) {
+        File::create(path).expect("file should be created");
+    }
+
+    #[test]
+    fn lib_exists_checks_shared_and_static() {
+        let dir = make_temp_dir("lib_exists");
+        let gomp_so = dir.join("libgomp.so");
+        let gomp_a = dir.join("libgomp.a");
+        let gomp_so_ver = dir.join("libgomp.so.1.0.0");
+
+        touch(&gomp_so);
+        assert!(lib_exists(&[dir.clone()], "gomp"));
+
+        fs::remove_file(&gomp_so).expect("shared lib should be removed");
+        touch(&gomp_a);
+        assert!(lib_exists(&[dir.clone()], "gomp"));
+
+        fs::remove_file(&gomp_a).expect("static lib should be removed");
+        touch(&gomp_so_ver);
+        assert!(lib_exists(&[dir.clone()], "gomp"));
+
+        fs::remove_dir_all(&dir).expect("temp dir should be removed");
+    }
+
+    #[test]
+    fn find_openmp_runtime_prefers_gomp() {
+        let dir = make_temp_dir("prefer_gomp");
+        touch(&dir.join("libgomp.so"));
+        touch(&dir.join("libomp.so"));
+
+        assert_eq!(find_openmp_runtime(&[dir.clone()]), Some("gomp"));
+
+        fs::remove_dir_all(&dir).expect("temp dir should be removed");
+    }
+
+    #[test]
+    fn find_openmp_runtime_falls_back_to_omp() {
+        let dir = make_temp_dir("fallback_omp");
+        touch(&dir.join("libomp.a"));
+
+        assert_eq!(find_openmp_runtime(&[dir.clone()]), Some("omp"));
+
+        fs::remove_dir_all(&dir).expect("temp dir should be removed");
+    }
+
+    #[test]
+    fn find_openmp_runtime_none_when_missing() {
+        let dir = make_temp_dir("none");
+
+        assert_eq!(find_openmp_runtime(&[dir.clone()]), None);
+
+        fs::remove_dir_all(&dir).expect("temp dir should be removed");
+    }
+}
